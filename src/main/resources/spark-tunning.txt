@@ -1,0 +1,91 @@
+ Go to Spark UI (http://<driver-node>:4040) → Stages → Task Metrics.
+ 	•	Check Spilled Bytes under Shuffle Read/Write.
+
+--conf spark.executor.memory=8g
+--conf spark.executor.memoryOverhead=2g
+
+--conf spark.sql.shuffle.partitions=400  # Increase for large workloads
+
+df.persist(StorageLevel.MEMORY_AND_DISK_SER);
+
+--conf spark.sql.join.preferSortMergeJoin=true
+
+Too many small tasks -> Increase partition size (coalesce(n))
+Too few tasks (underutilized CPUs) -> Increase partitions (repartition(n))
+Slow tasks (skewed partitions) -> Use salting or data bucketing
+High task failure rate -> Enable speculative execution (spark.speculation=true)
+
+
+transformations -> map, filter, groupBy -> Spark builds a DAG (Directed Acyclic Graph)
+action -> (e.g., collect(), count(), saveAsTextFile(), show()) -> creates JOBS
+Shuffle operations (like groupByKey(), reduceByKey())
+
+  kubectl logs -f spark-driver-pod
+  kubectl get pods -l spark-role=executor
+
+Key Differences from YARN:
+✔ Executors are dynamic and can scale up/down based on spark.dynamicAllocation.enabled.
+✔ Pods are ephemeral (destroyed when the job completes).
+✔ Uses Kubernetes’ built-in resource management instead of YARN’s container management.
+
+sum(rate(spark_executor_cpu_time_sum[5m]))]
+
+ExecutorService executor = Executors.newFixedThreadPool(2);
+
+executor.submit(() -> {
+    long count = df.count();  // Job 1
+});
+
+executor.submit(() -> {
+    df.write().format("parquet").save("output/");  // Job 2
+});
+executor.shutdown();
+
+3. Running Multiple Jobs in Structured Streaming
+When using Structured Streaming, Spark can run batch jobs and streaming jobs in parallel.
+Dataset<Row> streamingDF = spark.readStream().format("kafka").option("subscribe", "topic").load();
+Dataset<Row> batchDF = spark.read().csv("historical_data.csv");
+
+// Streaming job
+streamingDF.writeStream.format("console").start();
+
+// Batch job
+batchDF.agg(avg("value")).show();
+
+✔ Use repartition(n) to increase parallelism (reshuffles data).
+✔ Use coalesce(n) to reduce partitions (avoids reshuffling).
+
+B. Number of CPU Cores
+The actual degree of parallelism is limited by available CPU cores.
+	•	Executors can run as many tasks in parallel as cores available:
+--conf spark.executor.cores=4
+--conf spark.executor.instances=5
+	•	Executors = 5
+	•	Cores per Executor = 4
+	•	Total parallelism = 5 × 4 = 20 tasks at a time
+✔ Optimize by ensuring spark.default.parallelism ≈ total cores available.
+
+✔ Use spark.sql.shuffle.partitions = 2-3 × total cores for optimal parallelism.
+System.out.println(rdd.getNumPartitions()); // Prints current partition count
+
+B. Stages and Task Execution Example
+Consider this transformation:
+JavaRDD<String> rdd = sc.textFile("data.txt", 4);
+JavaRDD<Integer> mapped = rdd.map(line -> line.length());
+JavaRDD<Integer> reduced = mapped.reduceByKey(Integer::sum);
+reduced.collect();
+Execution breakdown:
+	1.	Stage 1 (Before Shuffle)
+	•	textFile() reads data into 4 partitions → 4 tasks.
+	•	map() applies transformation independently to each partition → 4 tasks.
+	2.	Stage 2 (After Shuffle - reduceByKey)
+	•	Data is shuffled and repartitioned.
+	•	New partitions are created → Each partition gets a new task.
+✔ Total number of tasks = sum of tasks across all stages.
+
+D. Handle Data Skew (If Some Tasks Spill More Than Others)
+If some partitions are much larger than others, apply salting or bucketing:
+SELECT *, floor(rand() * 10) as bucket FROM large_table;
+
+
+

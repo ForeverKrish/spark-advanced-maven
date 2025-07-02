@@ -1,0 +1,16 @@
+brew install mdogan/kafka/kafka@2.8
+
+brew services start zookeeper
+brew services start mdogan/kafka/kafka@2.8
+ls /opt/homebrew/opt/kafka@2.8/bin
+
+
+kafka-topics --create \
+--bootstrap-server localhost:9092 \
+--replication-factor 1 \
+--partitions 1 \
+--topic test-topic
+
+kafka-topics --list --bootstrap-server localhost:9092
+
+kafka-console-producer --broker-list localhost:9092 --topic test-topic

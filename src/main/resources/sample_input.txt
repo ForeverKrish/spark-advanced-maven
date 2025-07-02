@@ -1,0 +1,5 @@
+Hello world
+Apache Spark is awesome
+This is a sample text file
+Hello Spark
+Spark Spark World
